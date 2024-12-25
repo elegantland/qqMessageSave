@@ -7,6 +7,7 @@
 - 目前仅支持保存文本消息
 - 图片、表情、视频、转发消息等多媒体内容暂不支持（预计在2.0.0版本支持）
 - 支持和 [MessageBlocker](https://github.com/elegantland/qqMessageBlocker) 插件共存
+- 总所周知的原因，请不要登录多个账号使用本插件。
 
 ## 功能特点
 
