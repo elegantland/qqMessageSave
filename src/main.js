@@ -9,6 +9,6 @@ exports.onLogin = (uid) => {
 }
 
 // 插件加载时触发
-export const onLoad = () => {
+exports.onLoad = () => {
     console.log("Message Save 1.0.0 loaded");
 };
