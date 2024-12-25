@@ -315,13 +315,50 @@ const exportMessages = (format) => {
 
 // 用于存储全局状态
 const globalState = {
-    initialized: false,
-    knownMessages: new Set(),
     observer: null,
+    initialized: false,
     isInitializing: false,
     lastProcessedTime: 0,
-    messageCache: new Map(),
-    savedMessages: []  // 新增：用于存储所有捕获的消息
+    knownMessages: new Set(),
+    savedMessages: [],
+    currentUid: null
+};
+
+// 初始化函数
+const initializePlugin = () => {
+    // 初始化 knownMessages
+    if (!globalState.knownMessages) {
+        globalState.knownMessages = new Set();
+    }
+
+    // 初始化 savedMessages
+    if (!globalState.savedMessages) {
+        globalState.savedMessages = [];
+    }
+};
+
+// 获取当前用户ID的函数
+const getCurrentUid = () => {
+    try {
+        // 尝试多种方式获取用户ID
+        const uid = window.uin || 
+                   window.qq || 
+                   document.querySelector('.avatar-preview')?.getAttribute('data-uin') ||
+                   location.href.match(/uin=(\d+)/)?.[1];
+        
+        if (uid) {
+            return uid.toString();  // 确保返回字符串类型
+        }
+        return null;
+    } catch (error) {
+        console.error("[Message Save] 获取用户ID失败:", error);
+        return null;
+    }
+};
+
+// 获取存储键
+const getStorageKey = (uid) => {
+    return `message_save_${uid || globalState.currentUid}`;
 };
 
 // 添加消息唯一标识生成函数
@@ -370,55 +407,75 @@ const isSameMessage = (msg1, msg2) => {
            (msg1.type === '群消息' ? msg1.groupName === msg2.groupName : true);
 };
 
-// Vue组件挂载时触发
+// 修改 MutationObserver 的处理函数
+const handleMutations = (mutations) => {
+    try {
+        const now = Date.now();
+        if (now - globalState.lastProcessedTime < 100) {
+            return;
+        }
+        globalState.lastProcessedTime = now;
+
+        // 获取当前所有消息
+        const messageNodes = document.querySelectorAll('.recent-contact-item');
+        
+        messageNodes.forEach(node => {
+            const messageInfo = extractMessageInfo(node);
+            if (messageInfo) {
+                const { data } = messageInfo;
+                const messageKey = generateMessageKey(data);
+                
+                // 确保 knownMessages 存在
+                if (!globalState.knownMessages) {
+                    globalState.knownMessages = new Set();
+                }
+
+                // 如果是新消息，则保存
+                if (!globalState.knownMessages.has(messageKey)) {
+                    const formattedMessage = formatMessage(data);
+                    globalState.knownMessages.add(messageKey);
+                    saveMessage(formattedMessage);
+                }
+            }
+        });
+    } catch (error) {
+        console.error("[Message Save] 处理消息时出错:", error);
+        // 如果出错，重新初始化 Set
+        globalState.knownMessages = new Set();
+    }
+};
+
+// 修改 onVueComponentMount 函数
 export const onVueComponentMount = (component) => {
     if (globalState.isInitializing) return;
     globalState.isInitializing = true;
 
+    // 确保 knownMessages 已初始化
+    if (!globalState.knownMessages) {
+        globalState.knownMessages = new Set();
+    }
+
+    // 定期检查用户ID
+    const checkUid = () => {
+        const uid = getCurrentUid();
+        if (uid && uid !== globalState.currentUid) {
+            console.log("[Message Save] 检测到用户ID变化:", uid);
+            globalState.currentUid = uid;
+            // 切换用户时重置 Set
+            globalState.knownMessages = new Set();
+            loadSavedMessages();
+        }
+    };
+
+    // 初始检查
+    checkUid();
+    
+    // 每秒检查一次用户ID
+    const uidCheckInterval = setInterval(checkUid, 1000);
+
+    // 设置观察者
     setTimeout(() => {
-        const observer = new MutationObserver((mutations) => {
-            try {
-                const now = Date.now();
-                if (now - globalState.lastProcessedTime < 100) {
-                    return;
-                }
-                globalState.lastProcessedTime = now;
-
-                // 获取当前所有消息
-                const currentMessages = new Set();
-                const messageNodes = document.querySelectorAll('.recent-contact-item');
-                
-                messageNodes.forEach(node => {
-                    const messageInfo = extractMessageInfo(node);
-                    if (messageInfo) {
-                        const { data } = messageInfo;
-                        const messageKey = generateMessageKey(data);
-                        currentMessages.add(messageKey);
-                        
-                        // 更新消息缓存时间
-                        globalState.messageCache.set(messageKey, now);
-                        
-                        // 如果是新消息，则输出
-                        if (!globalState.knownMessages.has(messageKey)) {
-                            const formattedMessage = formatMessage(data);
-                            globalState.knownMessages.add(messageKey);
-                            saveMessage(formattedMessage);  // 保存新消息
-                        }
-                    }
-                });
-
-                // 清理超过30分钟的旧消息
-                const thirtyMinutes = 30 * 60 * 1000;
-                for (const [key, timestamp] of globalState.messageCache) {
-                    if (now - timestamp > thirtyMinutes) {
-                        globalState.messageCache.delete(key);
-                        globalState.knownMessages.delete(key);
-                    }
-                }
-            } catch (error) {
-                console.error('Error processing messages:', error);
-            }
-        });
+        const observer = new MutationObserver(handleMutations);
 
         observer.observe(document.documentElement, {
             childList: true,
@@ -428,6 +485,14 @@ export const onVueComponentMount = (component) => {
         globalState.observer = observer;
         globalState.initialized = true;
     }, 2000);
+
+    // 清理函数
+    return () => {
+        clearInterval(uidCheckInterval);
+        if (globalState.observer) {
+            globalState.observer.disconnect();
+        }
+    };
 };
 
 function extractMessageInfo(node) {
@@ -437,14 +502,14 @@ function extractMessageInfo(node) {
     
     if (!title || !time || !content) return null;
 
-    const isGroup = title.textContent.includes('群') || node.querySelector('.member-count');
+    // 检查消息内容是否包含 "：" 来判断是否为群消息
+    const messageText = content.textContent;
+    const hasColon = messageText.includes('：');
+    
     let data;
     
-    if (isGroup) {
-        const messageText = content.textContent;
-        const [sender, ...messageParts] = messageText.split('：');
-        const message = messageParts.join('：');
-
+    if (hasColon) {
+        const [sender, message] = messageText.split('：');
         data = {
             type: '群消息',
             groupName: title.textContent.trim(),
@@ -457,7 +522,7 @@ function extractMessageInfo(node) {
             type: '私聊消息',
             sender: title.textContent.trim(),
             time: time.textContent.trim(),
-            content: content.textContent.trim()
+            content: messageText.trim()
         };
     }
     
@@ -477,7 +542,22 @@ export const onVueComponentUnmount = (component) => {
 
 // 保存消息到本地存储
 const saveMessage = (message) => {
+    if (!globalState.knownMessages) {
+        initializePlugin();
+    }
+
     try {
+        const uid = getCurrentUid();
+        if (!uid) {
+            console.warn("[Message Save] 等待用户ID...");
+            return;
+        }
+
+        if (globalState.currentUid !== uid) {
+            globalState.currentUid = uid;
+            loadSavedMessages(); // 重新加载当前用户的消息
+        }
+
         const now = new Date();
         const fullTime = `${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')} ${message.time}`;
         
@@ -493,26 +573,40 @@ const saveMessage = (message) => {
 
         if (!messageExists) {
             globalState.savedMessages.push(messageWithFullTime);
-            localStorage.setItem(
-                'message_save_messages',
-                JSON.stringify(globalState.savedMessages)
-            );
+            localStorage.setItem(getStorageKey(uid), JSON.stringify(globalState.savedMessages));
             updateSettingsWindow();
         }
     } catch (error) {
-        console.error('Failed to save message:', error);
+        console.error("[Message Save] 保存消息失败:", error);
     }
 };
 
 // 从本地存储加载消息
 const loadSavedMessages = () => {
     try {
-        const saved = localStorage.getItem('message_save_messages');
+        const uid = getCurrentUid();
+        if (!uid) {
+            console.error("[Message Save] 无法获取用户ID");
+            return;
+        }
+
+        globalState.currentUid = uid;  // 更新当前用户ID
+        const saved = localStorage.getItem(getStorageKey(uid));
+        
         if (saved) {
             globalState.savedMessages = JSON.parse(saved);
+            // 重置已知消息集合
+            globalState.knownMessages.clear();
+            globalState.savedMessages.forEach(msg => {
+                const messageKey = generateMessageKey(msg);
+                globalState.knownMessages.add(messageKey);
+            });
+        } else {
+            globalState.savedMessages = [];
+            globalState.knownMessages.clear();
         }
     } catch (error) {
-        console.error('Failed to load saved messages:', error);
+        console.error("[Message Save] 加载消息失败:", error);
     }
 };
 
