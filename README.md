@@ -1,4 +1,4 @@
-# Message Save
+# qq Message Save
 
 一个QQ消息保存插件,目前QQ的最简单的保存消息内容的插件。觉得好用github给我点个star吧！
 
@@ -7,7 +7,8 @@
 - 目前仅支持保存文本消息
 - 图片、表情、视频、转发消息等多媒体内容暂不支持（预计在2.0.0版本支持）
 - 支持和 [MessageBlocker](https://github.com/elegantland/qqMessageBlocker) 插件共存
-- 尽量不要多账号使用，除非你懂堆栈思想。
+- 尽量不要多账号使用，后续会修复多账户bug。
+- 最近更新会很慢，就当这是一个纯文字消息导出插件
 
 ## 功能特点
 
