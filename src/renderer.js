@@ -1,8 +1,6 @@
 export const onSettingWindowCreated = (view) => {
     // 首先确保消息已加载
     loadSavedMessages();
-
-    // 创建设置界面1.0.0
     const settingsHtml = `
         <setting-section data-title="消息记录">
             <setting-panel>
@@ -66,6 +64,10 @@ export const onSettingWindowCreated = (view) => {
                     </setting-item>
                     <setting-item>
                         <setting-button data-type="primary" id="exportCsvButton">导出CSV</setting-button>
+                    </setting-item>
+                    <setting-item>
+                        <setting-button data-type="primary" id="importJson">导入JSON</setting-button>
+                        <input type="file" id="importInput" style="display: none;" accept=".json">
                     </setting-item>
                     <setting-item>
                         <setting-button data-type="secondary" id="clearButton">清除所有消息</setting-button>
@@ -261,6 +263,25 @@ export const onSettingWindowCreated = (view) => {
             state.filteredMessages = [];
             updateMessageList();
         }
+    });
+
+    // 获取导入相关元素
+    const importButton = view.querySelector('#importJson');
+    const importInput = view.querySelector('#importInput');
+
+    // 设置导入按钮点击事件
+    importButton.addEventListener('click', () => {
+        importInput.click();
+    });
+
+    // 设置文件选择事件
+    importInput.addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (file) {
+            importMessages(file);
+        }
+        // 清除选择，允许重复导入同一文件
+        importInput.value = '';
     });
 
 // 导出消息函数
@@ -557,4 +578,44 @@ const updateSettingsWindow = () => {
 
     // 更新显示
     updateMessageList();
+};
+
+// 添加导入功能
+const importMessages = (file) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const importedMessages = JSON.parse(e.target.result);
+            
+            // 验证导入的数据格式
+            if (!Array.isArray(importedMessages)) {
+                alert('导入失败：无效的文件格式');
+                return;
+            }
+
+            // 合并消息，去重
+            const existingKeys = new Set(globalState.savedMessages.map(msg => generateMessageKey(msg)));
+            const newMessages = importedMessages.filter(msg => !existingKeys.has(generateMessageKey(msg)));
+            
+            // 更新消息列表
+            globalState.savedMessages = [...globalState.savedMessages, ...newMessages];
+            
+            // 更新已知消息集合
+            newMessages.forEach(msg => {
+                globalState.knownMessages.add(generateMessageKey(msg));
+            });
+
+            // 保存到本地存储
+            localStorage.setItem('message_save_messages', JSON.stringify(globalState.savedMessages));
+            
+            // 更新界面
+            updateSettingsWindow();
+            
+            alert(`成功导入 ${newMessages.length} 条新消息`);
+        } catch (error) {
+            console.error('导入失败:', error);
+            alert('导入失败：文件格式错误');
+        }
+    };
+    reader.readAsText(file);
 };
