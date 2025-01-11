@@ -1,4 +1,4 @@
-# qq Message Save
+#  LiteLoaderQQNT 插件 - qq Message Save
 
 一个QQ消息保存插件,目前QQ的最简单的保存消息内容的插件。觉得好用github给我点个star吧！
 
