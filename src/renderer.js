@@ -523,17 +523,6 @@ const formatMessage = (data) => {
     };
 };
 
-// 调试函数
-const debugMessage = (message, data, key) => {
-    console.log(`${message}:
-    Type: ${data.type}
-    ${data.type === '群消息' ? 'Group: ' + data.groupName + '\n    ' : ''}Sender: ${data.sender}
-    Content: ${data.content}
-    Time: ${data.time}
-    Key: ${key}
-    Known Messages: ${globalState.knownMessages.size}`);
-};
-
 // 检查消息是否相同
 const isSameMessage = (msg1, msg2) => {
     const baseCheck = msg1.type === msg2.type &&
@@ -663,7 +652,6 @@ const saveMessage = (message) => {
     try {
         // 首先检查消息是否应该被过滤
         if (filterManager.shouldFilter(message)) {
-            console.log('消息被过滤:', message);
             return; // 如果消息应该被过滤，直接返回
         }
 
