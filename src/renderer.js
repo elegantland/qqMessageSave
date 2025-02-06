@@ -71,9 +71,11 @@ export const onSettingWindowCreated = (view) => {
         versionLogged = true;
     }
     
-    // 首先确保消息已加载
-    loadSavedMessages();
-    const settingsHtml = `
+    // 创建自定义元素来包装内容
+    const messageContainer = document.createElement('message-save-plugin-menu');
+    
+    // 原有的 HTML 内容
+    messageContainer.innerHTML = `
         <setting-section data-title="消息记录${PLUGIN_VERSION}">
             <setting-panel>
                 <setting-list data-direction="column">
@@ -173,9 +175,9 @@ export const onSettingWindowCreated = (view) => {
             </setting-panel>
         </setting-section>
     `;
-
-    // 设置界面内容
-    view.innerHTML = settingsHtml;
+    
+    // 追加而不是覆盖
+    view.appendChild(messageContainer);
 
     // 初始化状态
     const state = {
@@ -186,48 +188,67 @@ export const onSettingWindowCreated = (view) => {
 
     // 定义更新消息列表的函数
     const updateMessageList = () => {
-        const start = (state.currentPage - 1) * state.itemsPerPage;
-        const end = start + state.itemsPerPage;
-        const messages = state.filteredMessages.slice(start, end);
-
-        // 使用文档片段减少重绘
-        const fragment = document.createDocumentFragment();
-        messages.forEach(msg => {
-            const item = document.createElement('setting-item');
-            item.innerHTML = `
-                <div style="padding: 10px; background: #fff; margin-bottom: 8px; border-radius: 4px;">
-                    ${msg.type === '群消息' 
-                        ? `<div style="margin-bottom: 4px;">
-                             <setting-text style="color: #2196F3; font-weight: bold;">
-                                 ${msg.groupName}
-                             </setting-text>
-                           </div>` 
-                        : ''}
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <setting-text style="font-weight: bold;">${msg.sender}</setting-text>
-                            ${msg.type === '私聊消息' 
-                                ? '<setting-text style="color: #9C27B0; font-size: 0.9em;">[私聊]</setting-text>' 
-                                : ''}
-                        </div>
-                        <setting-text data-type="secondary">${msg.time}</setting-text>
-                    </div>
-                    <div style="padding: 4px 0;">
-                        <setting-text>${msg.content}</setting-text>
-                    </div>
-                </div>
-            `;
-            fragment.appendChild(item);
-        });
-
+        // 显示加载动画
         const messageList = view.querySelector('#messageList');
         if (messageList) {
-            messageList.innerHTML = '';
-            messageList.appendChild(fragment);
+            messageList.innerHTML = `
+                <div class="loading-spinner">
+                    <div class="spinner"></div>
+                    <div>加载中...</div>
+                </div>
+            `;
         }
 
-        // 更新统计信息
-        updateStatistics();
+        // 使用requestAnimationFrame优化渲染
+        requestAnimationFrame(() => {
+            const start = (state.currentPage - 1) * state.itemsPerPage;
+            const end = start + state.itemsPerPage;
+            const messages = state.filteredMessages.slice(start, end);
+
+            // 使用文档片段减少重绘
+            const fragment = document.createDocumentFragment();
+            messages.forEach(msg => {
+                const item = document.createElement('setting-item');
+                item.innerHTML = `
+                    <div style="padding: 10px; background: #fff; margin-bottom: 8px; border-radius: 4px;">
+                        ${msg.type === '群消息' 
+                            ? `<div style="margin-bottom: 4px;">
+                                 <setting-text style="color: #2196F3; font-weight: bold;">
+                                     ${msg.groupName}
+                                 </setting-text>
+                               </div>` 
+                            : ''}
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <setting-text style="font-weight: bold;">${msg.sender}</setting-text>
+                                ${msg.type === '私聊消息' 
+                                    ? '<setting-text style="color: #9C27B0; font-size: 0.9em;">[私聊]</setting-text>' 
+                                    : ''}
+                            </div>
+                            <setting-text data-type="secondary">${msg.time}</setting-text>
+                        </div>
+                        <div style="padding: 4px 0;">
+                            <setting-text>${msg.content}</setting-text>
+                        </div>
+                    </div>
+                `;
+                fragment.appendChild(item);
+            });
+
+            const messageListElement = view.querySelector('#messageList');
+            if (messageListElement) {
+                messageListElement.innerHTML = '';
+                messageListElement.appendChild(fragment);
+            }
+
+            // 更新统计信息
+            updateStatistics();
+
+            // 移除加载动画
+            if (messageList) {
+                messageList.querySelector('.loading-spinner')?.remove();
+            }
+        });
     };
 
     // 保存当前设置窗口状态
@@ -495,7 +516,8 @@ const globalState = {
     isInitializing: false,
     lastProcessedTime: 0,
     messageCache: new Map(),
-    savedMessages: []  // 新增：用于存储所有捕获的消息
+    savedMessages: [],  // 新增：用于存储所有捕获的消息
+    messageRefs: new WeakMap()  // 用于存储消息对象的弱引用
 };
 
 // 添加消息唯一标识生成函数
@@ -650,6 +672,10 @@ const getStorageKey = () => {
 // 修改 saveMessage 函数
 const saveMessage = (message) => {
     try {
+        // 添加弱引用
+        const messageKey = generateMessageKey(message);
+        globalState.messageRefs.set(message, messageKey);
+        
         // 首先检查消息是否应该被过滤
         if (filterManager.shouldFilter(message)) {
             return; // 如果消息应该被过滤，直接返回
@@ -663,7 +689,6 @@ const saveMessage = (message) => {
             time: fullTime
         };
 
-        const messageKey = generateMessageKey(messageWithFullTime);
         const messageExists = globalState.savedMessages.some(msg => isSameMessage(msg, messageWithFullTime));
 
         if (!messageExists) {
@@ -837,8 +862,18 @@ const processBatch = (messages, batchSize = 1000) => {
     processNextBatch();
 };
 
-// 添加统一的错误处理函数
-const handleError = (error, operation) => {
+// 增强错误处理
+const handleError = (error, operation, context = {}) => {
+    const errorInfo = {
+        timestamp: new Date().toISOString(),
+        operation,
+        error: {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+        },
+        context
+    };
     console.error(`Error during ${operation}:`, error);
     alert(`操作失败：${operation}\n${error.message}`);
 };
