@@ -3,7 +3,7 @@
     "type": "extension",
     "name": "MessageSave",
     "slug": "Message_Save",
-    "version": "1.0.3",
+    "version": "1.1.0",
     "description": "一个QQ消息保存插件,目前QQ的最简单的保存消息内容的插件。觉得好用github给我点个star吧！",
     "authors": [
         {
