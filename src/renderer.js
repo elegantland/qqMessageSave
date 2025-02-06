@@ -1,5 +1,5 @@
 // 在文件顶部定义版本号和初始化标志
-const PLUGIN_VERSION = '1.0.3';
+const PLUGIN_VERSION = '1.1.0';
 let versionLogged = false;
 
 // 将 filterManager 移到全局作用域
@@ -404,7 +404,7 @@ const exportMessages = (format) => {
     const exportData = {
         messages,
         filterRules,
-        version: '1.0.3',
+        version: '1.1.0',
         exportTime: new Date().toISOString()
     };
 
